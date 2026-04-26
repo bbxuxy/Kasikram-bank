@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>K-Bank Mobile Pro (Super Full Edition)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@zxing/library@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        :root { --primary: #1a73e8; --success: #2e7d32; --danger: #d32f2f; --bg: #f0f2f5; }
+        body { font-family: 'Kanit', sans-serif; background-color: var(--bg); margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow-x: hidden; }
+        .container { background: white; padding: 25px; border-radius: 28px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); width: 340px; text-align: center; position: relative; margin: 20px; }
+        .hidden { display: none !important; }
+        #loading { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.9); z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .balance-card { background: #fff; border: 1.5px solid #eee; border-radius: 20px; padding: 20px; margin: 15px 0; }
+        .amount { font-size: 32px; font-weight: bold; color: #202124; }
+        .locked-text { color: var(--danger); font-size: 13px; font-weight: 600; margin-bottom: 10px; background: #ffebee; padding: 5px; border-radius: 10px; }
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; }
+        button { padding: 14px; border: none; border-radius: 16px; cursor: pointer; font-weight: 600; transition: 0.2s; font-family: 'Kanit'; }
+        button:disabled { background: #ccc !important; cursor: not-allowed; }
+        .btn-blue { background: var(--primary); color: white; }
+        .btn-green { background: var(--success); color: white; }
+        .btn-red { background: var(--danger); color: white; }
+        .btn-outline { background: #f1f3f4; color: #3c4043; }
+        .btn-admin { border: 1px solid var(--primary); color: var(--primary); background: white; margin-top: 10px; width: 100%; display: flex; justify-content: space-between; align-items: center; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1.5px solid #eee; border-radius: 14px; box-sizing: border-box; font-family: 'Kanit'; font-size: 16px; }
+        #camera-preview { width: 100%; height: 220px; background: #000; border-radius: 16px; margin: 15px 0; overflow: hidden; position: relative; }
+        #video { width: 100%; height: 100%; object-fit: cover; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--danger); }
+        input:checked + .slider:before { transform: translateX(26px); }
+        .history-item { border-bottom: 1px solid #eee; padding: 12px 0; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+    </style>
+</head>
+<body>
+
+    <div id="loading" class="hidden"><div class="spinner"></div><p style="margin-top:15px;color:var(--primary)">กำลังประมวลผล...</p></div>
+
+    <div id="page-login" class="container">
+        <h2 style="color:var(--primary)">K-Bank Mobile</h2>
+        <p style="font-size: 14px; color: #666;">กรุณาใส่รหัส PIN เพื่อเข้าใช้งาน</p>
+        <input type="password" id="pin-input" placeholder="รหัส 4 หลัก" maxlength="4" style="text-align:center; font-size:24px; letter-spacing:10px">
+        <button class="btn-blue" style="width:100%" onclick="handleLogin()">เข้าสู่ระบบ</button>
+    </div>
+
+    <div id="page-dash" class="container hidden">
+        <div style="display:flex; justify-content: space-between; align-items: center;">
+            <strong id="user-name-display">-</strong>
+            <button class="btn-outline" style="padding:5px 12px; font-size:10px" onclick="location.reload()">ออกจากระบบ</button>
+        </div>
+        <div class="balance-card">
+            <div id="user-acc-display" style="font-size:14px; color:var(--primary); font-weight:600">000-0-00000-0</div>
+            <div id="lock-status-msg" class="locked-text hidden">⚠️ บัญชีถูกระงับ (ติดต่อ Admin)</div>
+            <div style="font-size:12px; color:#888">ยอดเงินในบัญชี</div>
+            <div id="status-display-box" class="amount">฿ 0.00</div>
+        </div>
+        <div class="btn-group">
+            <button class="btn-green" id="btn-depo" onclick="switchPage('page-transfer-acc')">โอน/ฝาก</button>
+            <button class="btn-blue" id="btn-pay" onclick="switchPage('page-payment-menu')">ชำระเงิน</button>
+        </div>
+        <button class="btn-outline" style="width:100%; margin-top:15px; display:flex; justify-content:space-between" onclick="switchPage('page-history')">
+            <span>ประวัติรายการ</span><span>❯</span>
+        </button>
+        <button id="admin-panel-btn" class="btn-admin hidden" onclick="checkAdminPass()">
+            <span>Admin Tools</span><span>⚙️</span>
+        </button>
+    </div>
+
+    <div id="page-transfer-acc" class="container hidden">
+        <h3>ระบุเลขบัญชี</h3>
+        <input type="text" id="target-acc" placeholder="เลขบัญชี 10 หลัก (ติดกันหรือมีขีดก็ได้)">
+        <button class="btn-blue" style="width:100%" onclick="switchPage('page-transfer-amt')">ถัดไป</button>
+        <button class="btn-outline" style="width:100%; margin-top:5px" onclick="switchPage('page-dash')">กลับ</button>
+    </div>
+
+    <div id="page-transfer-amt" class="container hidden">
+        <h3>ระบุจำนวนเงิน</h3>
+        <input type="number" id="amount-input" placeholder="0.00">
+        <button class="btn-green" style="width:100%" onclick="confirmTransfer()">ยืนยัน</button>
+        <button class="btn-outline" style="width:100%; margin-top:5px" onclick="switchPage('page-transfer-acc')">กลับ</button>
+    </div>
+
+    <div id="page-payment-menu" class="container hidden">
+        <h3>บริการชำระเงิน</h3>
+        <button class="btn-blue" style="width:100%; margin-bottom:10px" onclick="switchPage('page-get-barcode')">สร้างบาร์โค้ดรับเงิน</button>
+        <button class="btn-green" style="width:100%; margin-bottom:10px" onclick="startScan()">สแกนจ่าย (Scan2pay)</button>
+        <button class="btn-outline" style="width:100%" onclick="switchPage('page-dash')">กลับ</button>
+    </div>
+
+    <div id="page-get-barcode" class="container hidden">
+        <h3>สร้างบาร์โค้ด</h3>
+        <input type="text" id="receiver-name" placeholder="ชื่อรายการ">
+        <input type="number" id="receive-amount" placeholder="ยอดเงิน">
+        <button class="btn-blue" style="width:100%" onclick="generateBarcode()">สร้างบาร์โค้ด</button>
+        <button class="btn-outline" style="width:100%; margin-top:5px" onclick="switchPage('page-payment-menu')">กลับ</button>
+    </div>
+
+    <div id="page-show-barcode" class="container hidden">
+        <h3 id="display-recv-name">-</h3>
+        <div style="background:white; padding:15px; margin:15px 0; border:1px solid #ddd; border-radius:10px;"><svg id="real-barcode"></svg></div>
+        <h2 id="display-recv-amt" style="color:var(--primary)">฿ 0</h2>
+        <button class="btn-outline" style="width:100%" onclick="switchPage('page-payment-menu')">ปิด</button>
+    </div>
+
+    <div id="page-scanner" class="container hidden">
+        <div id="camera-preview"><video id="video" autoplay playsinline></video></div>
+        <button class="btn-outline" style="width:100%" onclick="stopScan(); switchPage('page-payment-menu')">ยกเลิก</button>
+    </div>
+
+    <div id="page-confirm-pay" class="container hidden">
+        <h3>ยืนยันการจ่าย</h3>
+        <div class="balance-card" style="text-align:left">
+            <p>ถึง: <strong id="conf-name">-</strong></p>
+            <p>ยอดเงิน: <strong id="conf-amt" style="color:var(--danger)">฿ 0</strong></p>
+        </div>
+        <button class="btn-green" style="width:100%" onclick="processPayment()">ชำระเงินทันที</button>
+        <button class="btn-outline" style="width:100%; margin-top:5px" onclick="switchPage('page-payment-menu')">ยกเลิก</button>
+    </div>
+
+    <div id="page-admin" class="container hidden">
+        <div style="display:flex; align-items:center; margin-bottom:15px">
+            <button class="btn-outline" onclick="switchPage('page-dash')">❮</button>
+            <h3 style="margin-left:15px">Admin Panel</h3>
+        </div>
+        <div style="text-align:left; background:#f9f9f9; padding:15px; border-radius:15px">
+            <strong>จัดการยอดเงิน</strong>
+            <input type="text" id="adm-target-acc" placeholder="เลขบัญชี 10 หลัก">
+            <input type="number" id="adm-target-amt" placeholder="จำนวนเงิน">
+            <button class="btn-blue" style="width:100%" onclick="adminAddMoney()">ยืนยัน</button>
+        </div>
+        <div style="text-align:left; margin-top:15px">
+            <strong>ค้นหาและจัดการบัญชี</strong>
+            <div style="display:flex; gap:5px">
+                <input type="text" id="adm-search-acc" placeholder="เลขบัญชี 10 หลัก">
+                <button class="btn-outline" style="width:60px" onclick="adminSearchUser()">🔍</button>
+            </div>
+        </div>
+        <div id="search-result" class="hidden" style="text-align:left; background:#eee; padding:15px; border-radius:15px; margin-top:10px">
+            <p>ชื่อ: <strong id="res-name">-</strong></p>
+            <p>ยอดเงิน: <strong id="res-money">฿ 0</strong></p>
+            <hr style="border:0.5px solid #ccc">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+                <span>ระงับการใช้งาน:</span>
+                <label class="switch"><input type="checkbox" id="res-lock-toggle" onchange="adminToggleLock()"><span class="slider"></span></label>
+            </div>
+            <button class="btn-red" style="width:100%; padding:10px; font-size:12px" onclick="adminResetMoney()">ล้างยอดเงินเป็น ฿0</button>
+        </div>
+    </div>
+
+    <div id="page-history" class="container hidden">
+        <button class="btn-outline" style="width:100%" onclick="switchPage('page-dash')">❮ กลับหน้าหลัก</button>
+        <div id="history-list-full" style="text-align:left; height:380px; overflow-y:auto; margin-top:10px"></div>
+    </div>
+
+    <div id="page-slip" class="container hidden">
+        <div style="border-top:8px solid var(--success); padding:20px; text-align:left; background:#fff; border-radius:0 0 15px 15px">
+            <h4 style="text-align:center; color:var(--success); margin-top:0">ทำรายการสำเร็จ</h4>
+            <div style="font-size:13px; line-height:2">
+                <p>จาก: <span id="slip-from"></span></p>
+                <p>ถึง: <span id="slip-to"></span></p>
+                <p style="border-top:1px dashed #ccc; padding-top:10px">ยอดโอน: <strong id="slip-amt-val" style="font-size:18px; float:right">0.00</strong></p>
+            </div>
+        </div>
+        <button class="btn-blue" style="width:100%; margin-top:15px" onclick="switchPage('page-dash')">ตกลง</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, set, get, update, onValue, push } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBCM-docyZzRLS0FpOglk6qgjZatLQmNAo",
+            authDomain: "bank-eb54d.firebaseapp.com",
+            projectId: "bank-eb54d",
+            databaseURL: "https://bank-eb54d-default-rtdb.firebaseio.com/"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const codeReader = new ZXing.BrowserMultiFormatReader();
+        let currentUser = null, currentPIN = "", searchedUserPIN = null, payData = null;
+
+        const showLoading = (show) => document.getElementById('loading').classList.toggle('hidden', !show);
+        const cleanAcc = (str) => String(str).replace(/-/g, '').trim();
+
+        // --- AUTH & SYNC ---
+        window.handleLogin = async () => {
+            const pin = document.getElementById('pin-input').value;
+            if(!pin) return;
+            showLoading(true);
+            try {
+                const s = await get(ref(db, 'users/' + pin));
+                if (s.exists()) {
+                    currentPIN = pin;
+                    if(pin === "1234") document.getElementById('admin-panel-btn').classList.remove('hidden');
+                    startSync(); 
+                    switchPage('page-dash');
+                } else alert("ไม่พบบัญชีในระบบ!");
+            } catch (e) { alert("เกิดข้อผิดพลาดในการเชื่อมต่อ"); }
+            showLoading(false);
+        };
+
+        function startSync() {
+            onValue(ref(db, 'users/' + currentPIN), (s) => {
+                currentUser = s.val();
+                document.getElementById('status-display-box').innerText = "฿ " + (currentUser.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2});
+                document.getElementById('user-name-display').innerText = currentUser.name;
+                document.getElementById('user-acc-display').innerText = currentUser.accNo;
+                
+                const isLocked = currentUser.locked || false;
+                document.getElementById('lock-status-msg').classList.toggle('hidden', !isLocked);
+                document.getElementById('btn-depo').disabled = isLocked;
+                document.getElementById('btn-pay').disabled = isLocked;
+            });
+            onValue(ref(db, 'history/' + currentPIN), (s) => {
+                const list = document.getElementById('history-list-full'); list.innerHTML = "";
+                if(s.exists()) {
+                    Object.values(s.val()).reverse().forEach(item => {
+                        list.innerHTML += `<div class="history-item"><div><strong>${item.note}</strong><br><small style="color:#888">${item.time}</small></div><div style="color:${item.amount > 0 ? 'green':'red'}; font-weight:600">${item.amount > 0 ? '+':''}${item.amount.toLocaleString()}</div></div>`;
+                    });
+                }
+            });
+        }
+
+        // --- TRANSACTIONS ---
+        window.confirmTransfer = async () => {
+            if(currentUser.locked) return alert("บัญชีถูกระงับ!");
+            const amt = parseFloat(document.getElementById('amount-input').value);
+            const inputAcc = cleanAcc(document.getElementById('target-acc').value);
+            if (!inputAcc || isNaN(amt) || amt <= 0) return alert("กรุณาระบุข้อมูลให้ถูกต้อง");
+
+            showLoading(true);
+            const s = await get(ref(db, 'users'));
+            let tPIN = null, tName = "", tLocked = false;
+
+            s.forEach(u => {
+                if (cleanAcc(u.val().accNo) === inputAcc) { tPIN = u.key; tName = u.val().name; tLocked = u.val().locked || false; }
+            });
+
+            if (!tPIN) { showLoading(false); return alert("ไม่พบเลขบัญชีปลายทาง"); }
+            if (tLocked && tPIN !== currentPIN) { showLoading(false); return alert("บัญชีปลายทางถูกระงับ!"); }
+
+            if (tPIN === currentPIN) {
+                await saveTransaction(currentPIN, amt, "ฝากเงินสด");
+            } else {
+                if (currentUser.balance < amt) { showLoading(false); return alert("ยอดเงินไม่เพียงพอ"); }
+                await saveTransaction(currentPIN, -amt, "โอนเงินไป " + tName);
+                await saveTransaction(tPIN, amt, "รับโอนจาก " + currentUser.name);
+            }
+            
+            document.getElementById('slip-from').innerText = currentUser.name;
+            document.getElementById('slip-to').innerText = tName;
+            document.getElementById('slip-amt-val').innerText = amt.toLocaleString(undefined, {minimumFractionDigits: 2});
+            showLoading(false); switchPage('page-slip');
+        };
+
+        // --- SCAN & BARCODE ---
+        window.generateBarcode = () => {
+            if(currentUser.locked) return alert("บัญชีถูกระงับ!");
+            const n = document.getElementById('receiver-name').value;
+            const a = document.getElementById('receive-amount').value;
+            if(!n || !a) return alert("กรอกข้อมูลให้ครบ");
+            JsBarcode("#real-barcode", `${currentPIN}|${n}|${a}`, { format: "CODE128", width: 2, height: 50, displayValue: false });
+            document.getElementById('display-recv-name').innerText = n;
+            document.getElementById('display-recv-amt').innerText = "฿ " + parseFloat(a).toLocaleString();
+            switchPage('page-show-barcode');
+        };
+
+        window.startScan = async () => {
+            if(currentUser.locked) return alert("บัญชีถูกระงับ!");
+            switchPage('page-scanner');
+            codeReader.decodeFromVideoDevice(null, 'video', (res) => {
+                if (res) {
+                    codeReader.reset();
+                    const p = res.text.split('|');
+                    payData = { pin: p[0], name: p[1], amt: parseFloat(p[2]) };
+                    document.getElementById('conf-name').innerText = p[1];
+                    document.getElementById('conf-amt').innerText = "฿ " + payData.amt.toLocaleString();
+                    switchPage('page-confirm-pay');
+                }
+            });
+        };
+
+        window.processPayment = async () => {
+            if (currentUser.balance < payData.amt) return alert("เงินไม่พอ");
+            showLoading(true);
+            const targetS = await get(ref(db, 'users/' + payData.pin));
+            if(!targetS.exists() || targetS.val().locked) { showLoading(false); return alert("ปลายทางไม่พร้อมรับเงิน"); }
+
+            await saveTransaction(currentPIN, -payData.amt, "ชำระเงิน: " + payData.name);
+            await saveTransaction(payData.pin, payData.amt, "รับชำระจาก: " + currentUser.name);
+            showLoading(false); switchPage('page-dash');
+        };
+
+        // --- ADMIN TOOLS ---
+        window.checkAdminPass = () => { if(prompt("รหัสผ่าน Admin:") === "2555") switchPage('page-admin'); else alert("รหัสไม่ถูกต้อง!"); };
+        
+        window.adminSearchUser = async () => {
+            const inputAcc = cleanAcc(document.getElementById('adm-search-acc').value);
+            showLoading(true);
+            const s = await get(ref(db, 'users')); searchedUserPIN = null;
+            s.forEach(u => { if(cleanAcc(u.val().accNo) === inputAcc) searchedUserPIN = u.key; });
+            
+            if(searchedUserPIN) {
+                const u = (await get(ref(db, 'users/' + searchedUserPIN))).val();
+                document.getElementById('search-result').classList.remove('hidden');
+                document.getElementById('res-name').innerText = u.name;
+                document.getElementById('res-money').innerText = "฿ " + (u.balance || 0).toLocaleString();
+                document.getElementById('res-lock-toggle').checked = u.locked || false;
+            } else alert("ไม่พบข้อมูล");
+            showLoading(false);
+        };
+
+        window.adminToggleLock = async () => {
+            if(!searchedUserPIN) return;
+            await update(ref(db, 'users/' + searchedUserPIN), { locked: document.getElementById('res-lock-toggle').checked });
+        };
+
+        window.adminResetMoney = async () => {
+            if(!searchedUserPIN) return;
+            if(confirm("ยืนยันล้างยอดเงินเป็น 0?")) {
+                showLoading(true);
+                const s = await get(ref(db, 'users/' + searchedUserPIN));
+                const bal = s.val().balance || 0;
+                await saveTransaction(searchedUserPIN, -bal, "Admin ล้างยอดเงิน");
+                adminSearchUser();
+                showLoading(false);
+            }
+        };
+
+        window.adminAddMoney = async () => {
+            const inputAcc = cleanAcc(document.getElementById('adm-target-acc').value);
+            const amt = parseFloat(document.getElementById('adm-target-amt').value);
+            showLoading(true);
+            const s = await get(ref(db, 'users')); let fPIN = null;
+            s.forEach(u => { if(cleanAcc(u.val().accNo) === inputAcc) fPIN = u.key; });
+            if(fPIN) { await saveTransaction(fPIN, amt, "รายการพิเศษจาก Admin"); alert("ดำเนินการสำเร็จ"); } 
+            else alert("ไม่พบเลขบัญชี");
+            showLoading(false);
+        };
+
+        // --- HELPER ---
+        async function saveTransaction(pin, amount, note) {
+            const time = new Date().toLocaleString('th-TH');
+            await push(ref(db, 'history/' + pin), { amount, note, time });
+            const s = await get(ref(db, 'users/' + pin));
+            await update(ref(db, 'users/' + pin), { balance: (s.val().balance || 0) + amount });
+        }
+
+        window.switchPage = (id) => { 
+            document.querySelectorAll('.container').forEach(p => p.classList.add('hidden')); 
+            document.getElementById(id).classList.remove('hidden'); 
+        };
+        window.stopScan = () => codeReader.reset();
+    </script>
+</body>
+</html>
